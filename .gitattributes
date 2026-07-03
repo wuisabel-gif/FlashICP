@@ -1,0 +1,3 @@
+# Keep GitHub's language bar focused on the actual project (CUDA / C++).
+# The landing page is documentation, not the codebase — don't count it.
+*.html linguist-documentation
