@@ -12,6 +12,13 @@ It is built and benchmarked against **real AUV rosbags** (Barracuda / ZED Mini),
 so every kernel has a CPU baseline and a measured speedup on actual data — not a
 synthetic benchmark.
 
+<p align="center">
+  <img src="Instrument.gif" alt="ICP aligning two scans: correspondence vectors shrink and the RMS error converges" width="720">
+  <br>
+  <sub>ICP in action — each new scan (amber) snaps onto the reference cloud (cyan); correspondence
+  vectors shrink as the RMS error converges. Illustrative 2D view of the loop; on the robot it runs in CUDA on a Jetson.</sub>
+</p>
+
 ## Why
 
 The point-cloud → ICP step is the hot path of a visual SLAM frontend: large clouds,
