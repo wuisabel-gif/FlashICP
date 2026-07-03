@@ -9,7 +9,7 @@ consecutive scans on the GPU — the same point-cloud frontend a factor-graph SL
 backend (e.g. GTSAM) relies on, but fast enough to keep up on a Jetson.
 
 It is built and benchmarked against **real AUV rosbags** (Barracuda / ZED Mini),
-so every kernel has a CPU baseline and a measured speedup on actual data — not a
+so every kernel has a CPU baseline and a measured speedup on actual data, not a
 synthetic benchmark.
 
 <p align="center">
@@ -19,12 +19,33 @@ synthetic benchmark.
   vectors shrink as the RMS error converges. Illustrative 2D view of the loop; on the robot it runs in CUDA on a Jetson.</sub>
 </p>
 
-## Why
+## Why it matters
+
+Underwater there is no GPS and no radio, so a robot has to work out its own motion
+purely from what its cameras and sonar see, every frame, or it silently loses track
+of where it is. The catch: that perception has to run on a **small, battery-powered
+computer sealed inside the hull**, not a datacenter. Today that limit is why so much
+subsea inspection still needs **divers or a crewed support vessel on station**, the
+expensive part of the job.
+
+Making the perception fast *on the hardware the robot already carries* is what changes
+that. FlashICP's payoff is concrete:
+
+- **Cheaper missions.** Reliable GPS-free autonomy means fewer ship-days and dive crews.
+- **Longer endurance.** Every millisecond and watt saved on compute is more battery for
+  the actual mission.
+- **Same chip, more capability.** A faster kernel at the same power lets one Jetson run
+  perception *and* mapping *and* avoidance, instead of demanding a bigger, hotter box.
+
+The measured **3.0× speedup at the same power** is a small, honest step toward exactly
+that: doing more of the robot's thinking onboard, for less.
+
+## Why a GPU
 
 The point-cloud → ICP step is the hot path of a visual SLAM frontend: large clouds,
 per-point work, run every keyframe. That is exactly the shape a GPU is built for.
-FlashICP rebuilds that path in CUDA to (a) learn the core GPU patterns — spatial
-hashing, parallel reduction, memory coalescing — and (b) produce a genuinely useful,
+FlashICP rebuilds that path in CUDA to (a) learn the core GPU patterns (spatial
+hashing, parallel reduction, memory coalescing) and (b) produce a genuinely useful,
 benchmarkable result.
 
 ## Pipeline
