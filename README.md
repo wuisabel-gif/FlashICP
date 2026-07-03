@@ -38,7 +38,7 @@ rosbag point cloud  ─►  GPU preprocess  ─►  GPU correspondence  ─►  
 ## Status
 
 Early but real: GPU voxel-grid downsample with a CPU baseline + timing harness,
-benchmarked on `zed_20260621_225845` on a Jetson AGX Orin. The first sort-based
+benchmarked on a real recorded ZED point cloud on a Jetson AGX Orin. The first sort-based
 port measured 0.7× (slower than CPU); the single-pass atomic-hash rewrite runs
 **3.0× faster than the CPU** (0.998 ms vs 2.991 ms, bit-exact output). Full
 story in `docs/jetson_runlog.md`.

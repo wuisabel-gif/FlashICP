@@ -56,6 +56,8 @@
     gap:16px;padding-block:22px}
   .brand{display:flex;align-items:center;gap:11px;font-family:"Space Grotesk",sans-serif;
     font-weight:600;letter-spacing:.01em}
+  .brand .logo{height:34px;width:auto;display:block}
+  @media (max-width:480px){.brand .logo{height:28px}}
   .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--sonar);
     box-shadow:0 0 0 4px rgba(54,214,228,.16);flex:none}
   .nav{display:flex;gap:26px;font-size:13px}
@@ -232,7 +234,7 @@
   <canvas id="cloud" aria-hidden="true"></canvas>
 
   <div class="wrap topbar">
-    <div class="brand"><span class="dot"></span>FlashICP</div>
+    <div class="brand"><img class="logo" src="logo.svg" alt="FlashICP"></div>
     <nav class="nav">
       <a href="#why">why</a>
       <a href="#pipeline">pipeline</a>
