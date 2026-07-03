@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <unordered_map>
 
@@ -67,6 +68,35 @@ inline std::vector<Point> voxel_downsample_cpu(const std::vector<Point>& in,
     const Acc& a = kv.second;
     out.push_back({static_cast<float>(a.sx / a.n), static_cast<float>(a.sy / a.n),
                    static_cast<float>(a.sz / a.n)});
+  }
+  return out;
+}
+
+// A correspondence: source point i -> nearest target index, squared distance.
+struct Corr {
+  int idx;    // index into target cloud, -1 if none within the search radius
+  float d2;   // squared distance to that target point
+};
+
+// CPU baseline for M2 correspondence: brute-force nearest target per source
+// point. O(src * tgt) — the ground truth the GPU grid is checked against.
+// `radius` caps the match distance (<=0 means unbounded); ICP rejects far pairs.
+inline std::vector<Corr> correspond_cpu(const std::vector<Point>& src,
+                                        const std::vector<Point>& tgt,
+                                        float radius) {
+  const float r2 = radius > 0 ? radius * radius
+                              : std::numeric_limits<float>::max();
+  std::vector<Corr> out(src.size());
+  for (size_t i = 0; i < src.size(); ++i) {
+    const Point s = src[i];
+    float best = r2;
+    int bi = -1;
+    for (size_t j = 0; j < tgt.size(); ++j) {
+      const float dx = s.x - tgt[j].x, dy = s.y - tgt[j].y, dz = s.z - tgt[j].z;
+      const float d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < best) { best = d2; bi = static_cast<int>(j); }
+    }
+    out[i] = {bi, bi < 0 ? -1.0f : best};
   }
   return out;
 }

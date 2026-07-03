@@ -30,9 +30,11 @@ rosbag point cloud  ─►  GPU preprocess  ─►  GPU correspondence  ─►  
 
 ## Status
 
-Early scaffold. Start point: GPU voxel-grid downsample with a CPU baseline + timing
-harness on `zed_20260621_225845`. See `docs/jetson_runlog.md` for the build and
-benchmark on the Jetson.
+Early but real: GPU voxel-grid downsample with a CPU baseline + timing harness,
+benchmarked on `zed_20260621_225845` on a Jetson AGX Orin. The first sort-based
+port measured 0.7× (slower than CPU); the single-pass atomic-hash rewrite runs
+**3.0× faster than the CPU** (0.998 ms vs 2.991 ms, bit-exact output). Full
+story in `docs/jetson_runlog.md`.
 
 ## Build & run
 
@@ -50,23 +52,37 @@ cmake --build build
 
 **3. Benchmark CPU vs GPU:**
 ```bash
-./build/flashicp bench data/cloud0.bin 0.05 20
-# loaded N points, leaf=0.050 m, iters=20
-# CPU voxel downsample: X.XXX ms -> K voxels
-# GPU voxel downsample: Y.YYY ms -> K voxels
-# speedup: Zx
+./build/flashicp bench data/cloud0.bin 0.05 50
+# loaded 113301 points, leaf=0.050 m, iters=50
+# CPU voxel downsample: 2.991 ms  -> 1358 voxels
+# GPU voxel (sort): 4.683 ms  -> 1358 voxels  (0.6x vs CPU)
+#   check: PASS (matches CPU)
+# GPU voxel (hash): 0.998 ms  -> 1358 voxels  (3.0x vs CPU)
 #   check: PASS (matches CPU)
 ```
 
 - On a **Jetson Orin / desktop GPU**: full CPU-vs-GPU comparison.
 - On a **Mac** (no CUDA): CPU baseline only — still useful to profile the C++ path.
 
+**4. Correspondence (M2):** nearest-neighbor between two clouds via a GPU spatial hash grid.
+```bash
+./build/flashicp corr data/cloud0.bin data/cloud1.bin 0.20 20
+# radius 0.20 m; each source point probes its 27 neighbor cells on the GPU,
+# checked against a brute-force CPU baseline.
+```
+The CPU baseline has a standalone self-check (no CUDA needed):
+```bash
+c++ -std=c++17 -Isrc tools/test_corr.cpp -o /tmp/test_corr && /tmp/test_corr  # -> PASS
+```
+
 ## Layout
 
 ```
 tools/dump_cloud.py   rosbag PointCloud2 -> flat x,y,z binary
-src/flashicp.hpp      Point, cloud IO, CPU voxel-downsample baseline
-src/voxel_gpu.cu      CUDA voxel downsample (key -> sort -> reduce)
-src/main.cpp          bench CLI (timing + CPU/GPU correctness check)
+tools/test_corr.cpp   standalone self-check for the CPU correspondence baseline
+src/flashicp.hpp      Point, cloud IO, CPU voxel-downsample + correspondence baselines
+src/voxel_gpu.cu      CUDA voxel downsample (thrust sort baseline + atomic hash)
+src/corr_gpu.cu       CUDA correspondence (fixed-radius spatial hash grid, 27-cell probe)
+src/main.cpp          bench/corr CLI (timing + CPU/GPU correctness check)
 CMakeLists.txt        CPU-always, CUDA-if-available build
 ```

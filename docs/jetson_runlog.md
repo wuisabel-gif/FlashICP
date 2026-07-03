@@ -169,3 +169,27 @@ contention far more cheaply than sorting. Output still matches the CPU bit-for-b
 
 The 3.0× is at a small problem size (113k points); it should widen on larger clouds
 and on the heavier M2 correspondence stage.
+
+---
+
+# M2 — GPU correspondence search (implemented; Jetson benchmark pending)
+
+Nearest-neighbor correspondence between two clouds, reusing the spatial-hash idea from
+M4. The target cloud is bucketed into a fixed-radius hash grid (cell edge = search
+radius, Teschner et al. hash); each source point probes its own cell plus the 26
+neighbors (3×3×3) for the nearest target. With cell edge == radius, any target within
+`radius` is guaranteed to fall in one of those 27 cells, so the GPU result matches the
+brute-force CPU baseline exactly for every source point whose true NN is within radius.
+
+- **CPU baseline:** `correspond_cpu()` — brute force O(src·tgt), the ground truth.
+- **GPU:** `correspond_gpu()` in `src/corr_gpu.cu` — build grid (hash + sort_by_key +
+  range kernel), then a query kernel, one source point per thread.
+- **Correctness (host-side, verified on Mac):** `tools/test_corr.cpp` passes; the CPU
+  `main` path compiles and runs. CUDA kernel not yet compiled/run here (no nvcc on the
+  Mac) — **next step: build + benchmark on the AGX Orin.**
+
+Why this stage should finally show a large GPU win: unlike the voxel downsample (which
+is memory-bound with almost no per-point work), correspondence does real arithmetic per
+query — dozens of distance evaluations across 27 cells — which is exactly the branchy,
+cache-hostile work a CPU k-d tree does poorly and the GPU does well. Expect the speedup
+to exceed M4's 3.0×; the number goes here once measured on the Jetson.
