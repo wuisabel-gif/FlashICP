@@ -27,7 +27,11 @@ inline std::vector<Point> load_cloud(const char* path) {
     return pts;
   }
   pts.resize(static_cast<size_t>(n));
-  std::fread(pts.data(), sizeof(Point), pts.size(), f);
+  size_t got = std::fread(pts.data(), sizeof(Point), pts.size(), f);
+  if (got != pts.size()) {
+    std::fprintf(stderr, "short read from %s: got %zu of %d points\n", path, got, n);
+    pts.resize(got);
+  }
   std::fclose(f);
   return pts;
 }

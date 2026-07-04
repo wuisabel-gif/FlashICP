@@ -26,7 +26,7 @@ static double ms_since(Clock::time_point t0) {
 }
 
 // Order-independent agreement check: same voxel count and matching centroid.
-static void compare(const std::vector<Point>& a, const std::vector<Point>& b) {
+[[maybe_unused]] static void compare(const std::vector<Point>& a, const std::vector<Point>& b) {
   auto mean = [](const std::vector<Point>& v) {
     double sx = 0, sy = 0, sz = 0;
     for (auto& p : v) { sx += p.x; sy += p.y; sz += p.z; }
@@ -45,7 +45,7 @@ static void compare(const std::vector<Point>& a, const std::vector<Point>& b) {
 // Correctness for correspondence: compare matched squared-distances (robust to
 // ties, where two equidistant targets are both "correct"). Reports agreement
 // among source points the CPU matched within the radius.
-static void compare_corr(const std::vector<flashicp::Corr>& cpu,
+[[maybe_unused]] static void compare_corr(const std::vector<flashicp::Corr>& cpu,
                          const std::vector<flashicp::Corr>& gpu) {
   size_t matched = 0, agree = 0;
   double sum_d = 0;

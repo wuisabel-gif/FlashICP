@@ -18,6 +18,7 @@
 #include <cfloat>
 #include <vector>
 
+#include "cuda_check.hpp"
 #include "flashicp.hpp"
 
 namespace {
@@ -116,6 +117,7 @@ std::vector<Corr> correspond_gpu(const std::vector<Point>& src,
   cellid_kernel<<<(nt + T - 1) / T, T>>>(
       thrust::raw_pointer_cast(d_tgt.data()), nt, cell, mask,
       thrust::raw_pointer_cast(d_cellid.data()));
+  CUDA_CHECK_KERNEL();
   // Group target indices by bucket so each bucket is a contiguous range.
   thrust::sort_by_key(d_cellid.begin(), d_cellid.end(), d_order.begin());
 
@@ -124,6 +126,7 @@ std::vector<Corr> correspond_gpu(const std::vector<Point>& src,
       thrust::raw_pointer_cast(d_cellid.data()), nt,
       thrust::raw_pointer_cast(d_start.data()),
       thrust::raw_pointer_cast(d_end.data()));
+  CUDA_CHECK_KERNEL();
 
   thrust::device_vector<int> d_idx(ns);
   thrust::device_vector<float> d_d2(ns);
@@ -135,6 +138,7 @@ std::vector<Corr> correspond_gpu(const std::vector<Point>& src,
       thrust::raw_pointer_cast(d_end.data()), cell, mask,
       thrust::raw_pointer_cast(d_idx.data()),
       thrust::raw_pointer_cast(d_d2.data()));
+  CUDA_CHECK_KERNEL();
 
   std::vector<int> h_idx(ns);
   std::vector<float> h_d2(ns);

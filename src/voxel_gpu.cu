@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "cuda_check.hpp"
 #include "flashicp.hpp"
 
 namespace {
@@ -110,9 +111,9 @@ void ensure(size_t n, size_t cap) {
   if (n > g.npts) {
     cudaFree(g.d_pts);
     cudaFree(g.d_out);
-    cudaMalloc(&g.d_pts, n * sizeof(flashicp::Point));
-    cudaMalloc(&g.d_out, n * sizeof(flashicp::Point));
-    if (!g.d_outn) cudaMalloc(&g.d_outn, sizeof(int));
+    CUDA_CHECK(cudaMalloc(&g.d_pts, n * sizeof(flashicp::Point)));
+    CUDA_CHECK(cudaMalloc(&g.d_out, n * sizeof(flashicp::Point)));
+    if (!g.d_outn) CUDA_CHECK(cudaMalloc(&g.d_outn, sizeof(int)));
     g.npts = n;
   }
   if (cap > g.cap) {
@@ -121,11 +122,11 @@ void ensure(size_t n, size_t cap) {
     cudaFree(g.d_sy);
     cudaFree(g.d_sz);
     cudaFree(g.d_cnt);
-    cudaMalloc(&g.d_keys, cap * sizeof(unsigned long long));
-    cudaMalloc(&g.d_sx, cap * sizeof(float));
-    cudaMalloc(&g.d_sy, cap * sizeof(float));
-    cudaMalloc(&g.d_sz, cap * sizeof(float));
-    cudaMalloc(&g.d_cnt, cap * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&g.d_keys, cap * sizeof(unsigned long long)));
+    CUDA_CHECK(cudaMalloc(&g.d_sx, cap * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&g.d_sy, cap * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&g.d_sz, cap * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&g.d_cnt, cap * sizeof(int)));
     g.cap = cap;
   }
 }
@@ -163,24 +164,26 @@ std::vector<Point> voxel_downsample_gpu_hash(const std::vector<Point>& in,
   const unsigned long long mask = cap - 1;
   ensure(n, cap);
 
-  cudaMemcpy(g.d_pts, in.data(), n * sizeof(Point), cudaMemcpyHostToDevice);
-  cudaMemset(g.d_keys, 0xFF, cap * sizeof(unsigned long long));
-  cudaMemset(g.d_sx, 0, cap * sizeof(float));
-  cudaMemset(g.d_sy, 0, cap * sizeof(float));
-  cudaMemset(g.d_sz, 0, cap * sizeof(float));
-  cudaMemset(g.d_cnt, 0, cap * sizeof(int));
-  cudaMemset(g.d_outn, 0, sizeof(int));
+  CUDA_CHECK(cudaMemcpy(g.d_pts, in.data(), n * sizeof(Point), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemset(g.d_keys, 0xFF, cap * sizeof(unsigned long long)));
+  CUDA_CHECK(cudaMemset(g.d_sx, 0, cap * sizeof(float)));
+  CUDA_CHECK(cudaMemset(g.d_sy, 0, cap * sizeof(float)));
+  CUDA_CHECK(cudaMemset(g.d_sz, 0, cap * sizeof(float)));
+  CUDA_CHECK(cudaMemset(g.d_cnt, 0, cap * sizeof(int)));
+  CUDA_CHECK(cudaMemset(g.d_outn, 0, sizeof(int)));
 
   const int T = 256;
   insert_kernel<<<(int)((n + T - 1) / T), T>>>(g.d_pts, (int)n, leaf, g.d_keys,
                                                g.d_sx, g.d_sy, g.d_sz, g.d_cnt,
                                                mask);
+  CUDA_CHECK_KERNEL();
   compact_kernel<<<(int)((cap + T - 1) / T), T>>>(g.d_sx, g.d_sy, g.d_sz, g.d_cnt,
                                                   (int)cap, g.d_out, g.d_outn);
+  CUDA_CHECK_KERNEL();
   int m = 0;
-  cudaMemcpy(&m, g.d_outn, sizeof(int), cudaMemcpyDeviceToHost);
+  CUDA_CHECK(cudaMemcpy(&m, g.d_outn, sizeof(int), cudaMemcpyDeviceToHost));
   std::vector<Point> out(m);
-  cudaMemcpy(out.data(), g.d_out, m * sizeof(Point), cudaMemcpyDeviceToHost);
+  CUDA_CHECK(cudaMemcpy(out.data(), g.d_out, m * sizeof(Point), cudaMemcpyDeviceToHost));
   return out;
 }
 

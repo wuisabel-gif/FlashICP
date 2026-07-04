@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  cpu:
+    name: CPU build + correspondence self-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (CPU-only) and run the self-check
+        run: |
+          cmake -B build -DUSE_CUDA=OFF
+          cmake --build build
+          c++ -std=c++17 -Wall -Wextra -Isrc tools/test_corr.cpp -o test_corr
+          ./test_corr
+
+  cuda:
+    name: CUDA compile (sm_87, no GPU on the runner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.5.0'
+          method: network
+          sub-packages: '["nvcc"]'
+      - name: Configure + build with CUDA enabled
+        run: |
+          cmake -B build -DUSE_CUDA=ON
+          cmake --build build

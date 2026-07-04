@@ -2,6 +2,12 @@
   <img src="logo.png" alt="FlashICP" width="440">
 </p>
 
+<p align="center">
+  <a href="https://github.com/wuisabel-gif/FlashICP/actions/workflows/build.yml">
+    <img src="https://github.com/wuisabel-gif/FlashICP/actions/workflows/build.yml/badge.svg" alt="build status">
+  </a>
+</p>
+
 GPU-accelerated ICP (Iterative Closest Point) for underwater point clouds, written in CUDA.
 
 FlashICP takes the registered point cloud from an AUV's stereo camera and aligns
