@@ -2,6 +2,7 @@
 #pragma once
 #include "../include/flashicp/registration.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
@@ -28,6 +29,19 @@ inline std::vector<Point> load_cloud(const char* path) {
     std::fclose(f);
     return pts;
   }
+  if (std::fseek(f, 0, SEEK_END) != 0) {
+    std::fclose(f);
+    return pts;
+  }
+  const long file_size = std::ftell(f);
+  const uint64_t required = sizeof(n) +
+                            static_cast<uint64_t>(n) * sizeof(Point);
+  if (file_size < 0 || static_cast<uint64_t>(file_size) < required ||
+      std::fseek(f, static_cast<long>(sizeof(n)), SEEK_SET) != 0) {
+    std::fprintf(stderr, "invalid or truncated cloud file %s\n", path);
+    std::fclose(f);
+    return pts;
+  }
   pts.resize(static_cast<size_t>(n));
   size_t got = std::fread(pts.data(), sizeof(Point), pts.size(), f);
   if (got != pts.size()) {
@@ -41,18 +55,23 @@ inline std::vector<Point> load_cloud(const char* path) {
 // 21 bits per axis (+/-1M voxels); the result stays below 2^63.
 inline int64_t voxel_key(int ix, int iy, int iz) {
   const int64_t B = 0x1FFFFF;
-  const int64_t OX = (ix + (1 << 20)) & B;
-  const int64_t OY = (iy + (1 << 20)) & B;
-  const int64_t OZ = (iz + (1 << 20)) & B;
+  const int64_t OX = (static_cast<int64_t>(ix) + (1 << 20)) & B;
+  const int64_t OY = (static_cast<int64_t>(iy) + (1 << 20)) & B;
+  const int64_t OZ = (static_cast<int64_t>(iz) + (1 << 20)) & B;
   return (OX << 42) | (OY << 21) | OZ;
 }
 
 inline int floor_div(float v, float leaf) {
-  return static_cast<int>(std::floor(v / leaf));
+  if (!std::isfinite(v) || !std::isfinite(leaf) || leaf <= 0.0f) return 0;
+  const double q = std::floor(static_cast<double>(v) / leaf);
+  if (q >= std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+  if (q <= std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
+  return static_cast<int>(q);
 }
 
 inline std::vector<Point> voxel_downsample_cpu(const std::vector<Point>& in,
                                                float leaf) {
+  if (!std::isfinite(leaf) || leaf <= 0.0f) return {};
   struct Acc {
     double sx = 0, sy = 0, sz = 0;
     int n = 0;
@@ -60,6 +79,7 @@ inline std::vector<Point> voxel_downsample_cpu(const std::vector<Point>& in,
   std::unordered_map<int64_t, Acc> grid;
   grid.reserve(in.size());
   for (const Point& p : in) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
     int64_t k = voxel_key(floor_div(p.x, leaf), floor_div(p.y, leaf),
                           floor_div(p.z, leaf));
     Acc& a = grid[k];
@@ -95,9 +115,15 @@ inline std::vector<Corr> correspond_cpu(const std::vector<Point>& src,
   std::vector<Corr> out(src.size());
   for (size_t i = 0; i < src.size(); ++i) {
     const Point s = src[i];
+    if (!std::isfinite(s.x) || !std::isfinite(s.y) || !std::isfinite(s.z)) {
+      out[i] = {-1, -1.0f};
+      continue;
+    }
     float best = r2;
     int bi = -1;
     for (size_t j = 0; j < tgt.size(); ++j) {
+      if (!std::isfinite(tgt[j].x) || !std::isfinite(tgt[j].y) ||
+          !std::isfinite(tgt[j].z)) continue;
       const float dx = s.x - tgt[j].x, dy = s.y - tgt[j].y, dz = s.z - tgt[j].z;
       const float d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < best) { best = d2; bi = static_cast<int>(j); }
