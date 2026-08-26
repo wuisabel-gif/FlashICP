@@ -1,6 +1,6 @@
 # 009 — Build sequential LiDAR odometry
 
-**Status:** Planned
+**Status:** Implemented (CPU; optional CUDA point-to-plane fallback is explicit)
 **Priority:** P0
 **Labels:** `area:odometry`, `area:core`, `priority:p0`
 **Depends on:** 007, 008

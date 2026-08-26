@@ -12,7 +12,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(SOURCES src/registration.cpp)
+set(SOURCES
+  src/registration.cpp
+  src/normals.cpp
+  src/kitti.cpp
+  src/odometry.cpp
+  src/evaluation.cpp)
 set(FLASHICP_HAVE_CUDA OFF)
 
 # CUDA is optional so the CPU reference remains usable on development machines
@@ -43,7 +48,7 @@ if(FLASHICP_HAVE_CUDA)
     CUDA_ARCHITECTURES "${FLASHICP_CUDA_ARCHITECTURES}")
 endif()
 
-add_executable(flashicp src/main.cpp)
+add_executable(flashicp src/main.cpp src/odometry_cli.cpp)
 target_link_libraries(flashicp PRIVATE flashicp_core)
 target_include_directories(flashicp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -75,4 +80,10 @@ if(BUILD_TESTING)
   flashicp_enable_test_assertions(test_registration)
   add_test(NAME flashicp_registration_cpu COMMAND test_registration)
   set_tests_properties(flashicp_registration_cpu PROPERTIES SKIP_RETURN_CODE 77)
+
+  add_executable(test_milestone tests/test_milestone.cpp)
+  target_link_libraries(test_milestone PRIVATE flashicp_core)
+  target_include_directories(test_milestone PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  flashicp_enable_test_assertions(test_milestone)
+  add_test(NAME flashicp_milestone_cpu COMMAND test_milestone)
 endif()

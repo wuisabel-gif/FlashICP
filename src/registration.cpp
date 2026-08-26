@@ -1,6 +1,7 @@
 #include "flashicp/registration.hpp"
 
 #include "flashicp.hpp"
+#include "flashicp/normals.hpp"
 #include "registration_internal.hpp"
 
 #include <algorithm>
@@ -77,6 +78,16 @@ bool finite_options(const ICPOptions& options, std::string& message) {
     message = "min_correspondences must be at least 3 for rigid 3D alignment";
     return false;
   }
+  if (options.method == ICPMethod::PointToPlane) {
+    if (options.normal_k_neighbors < 3) {
+      message = "normal_k_neighbors must be at least 3";
+      return false;
+    }
+    if (!std::isfinite(options.normal_search_radius) || options.normal_search_radius < 0.0f) {
+      message = "normal_search_radius must be finite and nonnegative";
+      return false;
+    }
+  }
   return true;
 }
 
@@ -88,6 +99,7 @@ void finish_timing(RegistrationResult& result, Clock::time_point started) {
 RegistrationResult invalid_result(const std::string& message,
                                   Clock::time_point started) {
   RegistrationResult result;
+  result.backend_used = ExecutionBackend::CPU;
   result.status = RegistrationStatus::InvalidInput;
   result.message = message;
   finish_timing(result, started);
@@ -284,6 +296,110 @@ float transform_step_impl(const Transform& transform) {
   return angle + translation;
 }
 
+internal::SolveStatus solve_point_to_plane_impl(
+    const std::vector<PointXYZ>& source, const std::vector<PointXYZ>& target,
+  const std::vector<Corr>& correspondences, const NormalCloud& normals,
+    Transform& delta, float& rms, std::size_t& valid_correspondences) {
+  NormalEquation6 equation;
+  for (std::size_t i = 0; i < correspondences.size(); ++i) {
+    const Corr& corr = correspondences[i];
+    if (corr.idx < 0 || static_cast<std::size_t>(corr.idx) >= target.size() ||
+        i >= source.size() || static_cast<std::size_t>(corr.idx) >= normals.size()) continue;
+    const NormalXYZ& normal = normals[static_cast<std::size_t>(corr.idx)];
+    if (!std::isfinite(normal.x) || !std::isfinite(normal.y) || !std::isfinite(normal.z)) continue;
+    const double normal_length = std::sqrt(static_cast<double>(normal.x) * normal.x +
+                                            static_cast<double>(normal.y) * normal.y +
+                                            static_cast<double>(normal.z) * normal.z);
+    if (!std::isfinite(normal_length) || normal_length <= 1.0e-12) continue;
+    const double nx = normal.x / normal_length;
+    const double ny = normal.y / normal_length;
+    const double nz = normal.z / normal_length;
+    const Vec3 x = to_vec(source[i]);
+    const PointXYZ& q_point = target[static_cast<std::size_t>(corr.idx)];
+    const Vec3 q = to_vec(q_point);
+    const Vec3 n{nx, ny, nz};
+    const Vec3 rotational = cross(x, n);
+    const std::array<double, 6> jacobian{{rotational.x, rotational.y, rotational.z,
+                                           nx, ny, nz}};
+    const double residual = dot(n, x - q);
+    if (!std::isfinite(residual)) continue;
+    ++valid_correspondences;
+    for (int row = 0; row < 6; ++row) {
+      equation.rhs[static_cast<std::size_t>(row)] -= jacobian[static_cast<std::size_t>(row)] * residual;
+      for (int col = 0; col < 6; ++col) {
+        equation.ata[static_cast<std::size_t>(row * 6 + col)] +=
+            jacobian[static_cast<std::size_t>(row)] * jacobian[static_cast<std::size_t>(col)];
+      }
+    }
+  }
+  equation.correspondences = valid_correspondences;
+  if (valid_correspondences < 3) return internal::SolveStatus::Degenerate;
+
+  std::array<double, 6> twist{};
+  const LinearSolveStatus linear_status = solve_normal_equation(equation, twist);
+  if (linear_status == LinearSolveStatus::Singular) return internal::SolveStatus::Degenerate;
+  if (linear_status != LinearSolveStatus::Success) return internal::SolveStatus::NumericalFailure;
+  for (double value : twist) {
+    if (!std::isfinite(value)) return internal::SolveStatus::NumericalFailure;
+  }
+
+  const double wx = twist[0], wy = twist[1], wz = twist[2];
+  const double theta2 = wx * wx + wy * wy + wz * wz;
+  const double theta = std::sqrt(theta2);
+  double a = 1.0;
+  double b = 0.5;
+  if (theta > 1.0e-12) {
+    a = std::sin(theta) / theta;
+    b = (1.0 - std::cos(theta)) / theta2;
+  }
+  const double k2_00 = -(wy * wy + wz * wz);
+  const double k2_01 = wx * wy;
+  const double k2_02 = wx * wz;
+  const double k2_10 = k2_01;
+  const double k2_11 = -(wx * wx + wz * wz);
+  const double k2_12 = wy * wz;
+  const double k2_20 = k2_02;
+  const double k2_21 = k2_12;
+  const double k2_22 = -(wx * wx + wy * wy);
+  delta.rotation = {{static_cast<float>(1.0 + b * k2_00),
+                     static_cast<float>(-a * wz + b * k2_01),
+                     static_cast<float>(a * wy + b * k2_02),
+                     static_cast<float>(a * wz + b * k2_10),
+                     static_cast<float>(1.0 + b * k2_11),
+                     static_cast<float>(-a * wx + b * k2_12),
+                     static_cast<float>(-a * wy + b * k2_20),
+                     static_cast<float>(a * wx + b * k2_21),
+                     static_cast<float>(1.0 + b * k2_22)}};
+  delta.translation = {{static_cast<float>(twist[3]), static_cast<float>(twist[4]),
+                        static_cast<float>(twist[5])}};
+  if (!delta.is_valid(2.0e-3f)) return internal::SolveStatus::NumericalFailure;
+
+  double updated_residual_sum = 0.0;
+  std::size_t updated_count = 0;
+  for (std::size_t i = 0; i < correspondences.size(); ++i) {
+    const Corr& corr = correspondences[i];
+    if (corr.idx < 0 || static_cast<std::size_t>(corr.idx) >= target.size() ||
+        i >= source.size() || static_cast<std::size_t>(corr.idx) >= normals.size()) continue;
+    const NormalXYZ& normal = normals[static_cast<std::size_t>(corr.idx)];
+    if (!std::isfinite(normal.x) || !std::isfinite(normal.y) || !std::isfinite(normal.z)) continue;
+    const PointXYZ mapped = delta.apply(source[i]);
+    const PointXYZ& q = target[static_cast<std::size_t>(corr.idx)];
+    const double length = std::sqrt(static_cast<double>(normal.x) * normal.x +
+                                     static_cast<double>(normal.y) * normal.y +
+                                     static_cast<double>(normal.z) * normal.z);
+    if (length <= 1.0e-12 || !std::isfinite(length)) continue;
+    const double residual = (normal.x * (mapped.x - q.x) + normal.y * (mapped.y - q.y) +
+                             normal.z * (mapped.z - q.z)) / length;
+    if (!std::isfinite(residual)) continue;
+    updated_residual_sum += residual * residual;
+    ++updated_count;
+  }
+  if (updated_count == 0 || !std::isfinite(updated_residual_sum))
+    return internal::SolveStatus::NumericalFailure;
+  rms = static_cast<float>(std::sqrt(updated_residual_sum / updated_count));
+  return std::isfinite(rms) ? internal::SolveStatus::Ok : internal::SolveStatus::NumericalFailure;
+}
+
 }  // namespace
 
 namespace internal {
@@ -293,6 +409,15 @@ SolveStatus solve_rigid(const std::vector<PointXYZ>& source,
                         const std::vector<Corr>& correspondences,
                         Transform& transform, float& rms) {
   return solve_rigid_impl(source, target, correspondences, transform, rms);
+}
+
+SolveStatus solve_point_to_plane(const std::vector<PointXYZ>& source,
+                                 const std::vector<PointXYZ>& target,
+                                 const std::vector<Corr>& correspondences,
+                                 const NormalCloud& normals, Transform& delta,
+                                 float& rms, std::size_t& valid_correspondences) {
+  return solve_point_to_plane_impl(source, target, correspondences, normals, delta, rms,
+                                   valid_correspondences);
 }
 
 float transform_step(const Transform& transform) {
@@ -373,19 +498,101 @@ Transform operator*(const Transform& lhs, const Transform& rhs) {
   return result;
 }
 
+LinearSolveStatus solve_normal_equation(const NormalEquation6& equation,
+                                        std::array<double, 6>& solution,
+                                        double relative_pivot_tolerance) {
+  if (!std::isfinite(relative_pivot_tolerance) || relative_pivot_tolerance <= 0.0) {
+    return LinearSolveStatus::NumericalFailure;
+  }
+  std::array<double, 6> scale{};
+  double max_diagonal = 0.0;
+  for (int i = 0; i < 6; ++i) {
+    const double diagonal = equation.ata[static_cast<std::size_t>(i * 6 + i)];
+    if (!std::isfinite(diagonal) || diagonal < 0.0) return LinearSolveStatus::NumericalFailure;
+    max_diagonal = std::max(max_diagonal, diagonal);
+  }
+  if (!std::isfinite(max_diagonal) || max_diagonal <= 0.0) return LinearSolveStatus::Singular;
+  for (double value : equation.rhs) {
+    if (!std::isfinite(value)) return LinearSolveStatus::NumericalFailure;
+  }
+  for (int i = 0; i < 6; ++i) {
+    const double diagonal = equation.ata[static_cast<std::size_t>(i * 6 + i)];
+    if (diagonal <= max_diagonal * relative_pivot_tolerance) return LinearSolveStatus::Singular;
+    scale[static_cast<std::size_t>(i)] = std::sqrt(diagonal);
+  }
+
+  // Normalize each rotational/translation column before pivoting. This avoids
+  // treating metres and radians as different numerical units while preserving
+  // the exact solution of the original system.
+  double augmented[6][7]{};
+  for (int row = 0; row < 6; ++row) {
+    for (int col = 0; col < 6; ++col) {
+      // Normal equations are symmetric. Averaging the two stored entries also
+      // makes the public solver tolerant of callers that populate one triangle.
+      const double symmetric_entry = 0.5 *
+          (equation.ata[static_cast<std::size_t>(row * 6 + col)] +
+           equation.ata[static_cast<std::size_t>(col * 6 + row)]);
+      const double value = symmetric_entry /
+                           (scale[static_cast<std::size_t>(row)] * scale[static_cast<std::size_t>(col)]);
+      if (!std::isfinite(value)) return LinearSolveStatus::NumericalFailure;
+      augmented[row][col] = value;
+    }
+    augmented[row][6] = equation.rhs[static_cast<std::size_t>(row)] /
+                        scale[static_cast<std::size_t>(row)];
+  }
+  double largest_pivot = 0.0;
+  double smallest_pivot = std::numeric_limits<double>::infinity();
+  for (int col = 0; col < 6; ++col) {
+    int pivot_row = col;
+    double pivot_abs = std::abs(augmented[col][col]);
+    for (int row = col + 1; row < 6; ++row) {
+      if (std::abs(augmented[row][col]) > pivot_abs) {
+        pivot_abs = std::abs(augmented[row][col]);
+        pivot_row = row;
+      }
+    }
+    if (!std::isfinite(pivot_abs) || pivot_abs <= relative_pivot_tolerance) {
+      return LinearSolveStatus::Singular;
+    }
+    if (pivot_row != col) {
+      for (int j = col; j <= 6; ++j) std::swap(augmented[col][j], augmented[pivot_row][j]);
+    }
+    largest_pivot = std::max(largest_pivot, pivot_abs);
+    smallest_pivot = std::min(smallest_pivot, pivot_abs);
+    for (int row = col + 1; row < 6; ++row) {
+      const double factor = augmented[row][col] / augmented[col][col];
+      for (int j = col; j <= 6; ++j) augmented[row][j] -= factor * augmented[col][j];
+    }
+  }
+  if (!std::isfinite(smallest_pivot) ||
+      smallest_pivot <= largest_pivot * relative_pivot_tolerance) {
+    return LinearSolveStatus::Singular;
+  }
+  std::array<double, 6> normalized_solution{};
+  for (int row = 5; row >= 0; --row) {
+    double value = augmented[row][6];
+    for (int col = row + 1; col < 6; ++col) value -= augmented[row][col] * normalized_solution[col];
+    normalized_solution[static_cast<std::size_t>(row)] = value / augmented[row][row];
+    if (!std::isfinite(normalized_solution[static_cast<std::size_t>(row)]))
+      return LinearSolveStatus::NumericalFailure;
+  }
+  for (int i = 0; i < 6; ++i) {
+    solution[static_cast<std::size_t>(i)] =
+        normalized_solution[static_cast<std::size_t>(i)] / scale[static_cast<std::size_t>(i)];
+    if (!std::isfinite(solution[static_cast<std::size_t>(i)]))
+      return LinearSolveStatus::NumericalFailure;
+  }
+  return LinearSolveStatus::Success;
+}
+
 RegistrationResult align_cpu(const PointCloud& source, const PointCloud& target,
                              const Transform& initial_guess,
                              const ICPOptions& options) {
   const Clock::time_point started = Clock::now();
   RegistrationResult result;
+  result.backend_used = ExecutionBackend::CPU;
   result.transform = initial_guess;
 
-  if (options.method != ICPMethod::PointToPoint) {
-    result.status = RegistrationStatus::UnsupportedMethod;
-    result.message = "point-to-plane is not implemented yet";
-    finish_timing(result, started);
-    return result;
-  }
   std::string validation_message;
   if (!finite_options(options, validation_message)) {
     return invalid_result(validation_message, started);
@@ -416,6 +623,29 @@ RegistrationResult align_cpu(const PointCloud& source, const PointCloud& target,
     return result;
   }
 
+  NormalCloud target_normals;
+  if (options.method == ICPMethod::PointToPlane) {
+    const Clock::time_point normal_started = Clock::now();
+    const NormalEstimationResult normal_result =
+        estimate_normals_cpu(target_work, options.normal_k_neighbors,
+                             options.normal_search_radius);
+    target_normals = normal_result.normals;
+    result.timing.normal_estimation_ms =
+        std::chrono::duration<double, std::milli>(Clock::now() - normal_started).count();
+    if (normal_result.valid_normals < options.min_correspondences) {
+      result.status = RegistrationStatus::NormalEstimationFailure;
+      result.message = "target normal estimation produced too few usable normals: " +
+                       normal_result.message;
+      finish_timing(result, started);
+      return result;
+    }
+  } else if (options.method != ICPMethod::PointToPoint) {
+    result.status = RegistrationStatus::UnsupportedMethod;
+    result.message = "unsupported ICP method";
+    finish_timing(result, started);
+    return result;
+  }
+
   Transform current = initial_guess;
   float previous_error = std::numeric_limits<float>::infinity();
   for (int iteration = 0; iteration < options.max_iterations; ++iteration) {
@@ -425,8 +655,9 @@ RegistrationResult align_cpu(const PointCloud& source, const PointCloud& target,
     }
 
     const Clock::time_point correspondence_started = Clock::now();
-    const std::vector<Corr> correspondences =
-        correspond_cpu(transformed, target_work, options.correspondence_radius);
+    const std::vector<Corr> correspondences = options.use_spatial_hash
+        ? correspond_cpu_grid(transformed, target_work, options.correspondence_radius)
+        : correspond_cpu(transformed, target_work, options.correspondence_radius);
     result.timing.correspondence_ms +=
         std::chrono::duration<double, std::milli>(Clock::now() - correspondence_started).count();
     std::size_t matched = 0;
@@ -451,19 +682,33 @@ RegistrationResult align_cpu(const PointCloud& source, const PointCloud& target,
     const Clock::time_point solve_started = Clock::now();
     Transform delta;
     float error = -1.0f;
-    const internal::SolveStatus solve_status =
-        internal::solve_rigid(transformed, target_work, correspondences, delta, error);
+    std::size_t valid_plane_correspondences = 0;
+    const internal::SolveStatus solve_status = options.method == ICPMethod::PointToPlane
+        ? internal::solve_point_to_plane(transformed, target_work, correspondences,
+                                         target_normals, delta, error,
+                                         valid_plane_correspondences)
+        : internal::solve_rigid(transformed, target_work, correspondences, delta, error);
     result.timing.solve_ms +=
         std::chrono::duration<double, std::milli>(Clock::now() - solve_started).count();
+    if (options.method == ICPMethod::PointToPlane && valid_plane_correspondences < options.min_correspondences) {
+      result.status = RegistrationStatus::NormalEstimationFailure;
+      result.message = "fewer than min_correspondences have valid target normals";
+      finish_timing(result, started);
+      return result;
+    }
     if (solve_status == internal::SolveStatus::Degenerate) {
       result.status = RegistrationStatus::DegenerateGeometry;
-      result.message = "correspondences do not constrain a rigid transform";
+      result.message = options.method == ICPMethod::PointToPlane
+                           ? "point-to-plane normal equation is singular or poorly conditioned"
+                           : "correspondences do not constrain a rigid transform";
       finish_timing(result, started);
       return result;
     }
     if (solve_status == internal::SolveStatus::NumericalFailure) {
       result.status = RegistrationStatus::NumericalFailure;
-      result.message = "rigid transform solve produced a nonfinite result";
+      result.message = options.method == ICPMethod::PointToPlane
+                           ? "point-to-plane normal-equation solve produced a nonfinite result"
+                           : "rigid transform solve produced a nonfinite result";
       finish_timing(result, started);
       return result;
     }
@@ -527,6 +772,7 @@ const char* to_string(RegistrationStatus status) {
     case RegistrationStatus::NoCorrespondences: return "no_correspondences";
     case RegistrationStatus::InsufficientCorrespondences: return "insufficient_correspondences";
     case RegistrationStatus::DegenerateGeometry: return "degenerate_geometry";
+    case RegistrationStatus::NormalEstimationFailure: return "normal_estimation_failure";
     case RegistrationStatus::NumericalFailure: return "numerical_failure";
     case RegistrationStatus::UnsupportedMethod: return "unsupported_method";
     case RegistrationStatus::CudaUnavailable: return "cuda_unavailable";
@@ -548,6 +794,15 @@ const char* to_string(ExecutionBackend backend) {
     case ExecutionBackend::Auto: return "auto";
     case ExecutionBackend::CPU: return "cpu";
     case ExecutionBackend::CUDA: return "cuda";
+  }
+  return "unknown";
+}
+
+const char* to_string(LinearSolveStatus status) {
+  switch (status) {
+    case LinearSolveStatus::Success: return "success";
+    case LinearSolveStatus::Singular: return "singular";
+    case LinearSolveStatus::NumericalFailure: return "numerical_failure";
   }
   return "unknown";
 }

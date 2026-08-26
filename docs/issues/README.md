@@ -13,10 +13,10 @@ criteria that can be checked in a pull request.
 | [004](004-cpu-point-to-point-icp.md) | Implement CPU point-to-point ICP | Implemented |
 | [005](005-registration-tests.md) | Add registration correctness tests | Partial |
 | [006](006-cuda-point-to-point-icp.md) | Implement CUDA point-to-point ICP | Partial, CUDA unverified |
-| [007](007-point-to-plane-icp.md) | Add point-to-plane ICP | Planned |
-| [008](008-kitti-loader.md) | Add the KITTI Odometry loader | Planned |
-| [009](009-lidar-odometry-cli.md) | Build sequential LiDAR odometry | Planned |
-| [010](010-trajectory-evaluation.md) | Add trajectory evaluation | Planned |
+| [007](007-point-to-plane-icp.md) | Add point-to-plane ICP | Implemented (CPU; CUDA optional) |
+| [008](008-kitti-loader.md) | Add the KITTI Odometry loader | Implemented |
+| [009](009-lidar-odometry-cli.md) | Build sequential LiDAR odometry | Implemented (CPU; CUDA optional) |
+| [010](010-trajectory-evaluation.md) | Add trajectory evaluation | Implemented |
 | [011](011-benchmark-suite.md) | Build the CPU/CUDA benchmark suite | Planned |
 | [012](012-robustness-experiments.md) | Add reproducible robustness experiments | Planned |
 | [013](013-jetson-validation.md) | Validate and document Jetson deployment | Planned |

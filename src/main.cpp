@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "flashicp.hpp"
+#include "odometry_cli.hpp"
 
 #ifdef FLASHICP_CUDA
 namespace flashicp {
@@ -132,6 +133,8 @@ static int run_corr(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+  if (argc >= 2 && std::strcmp(argv[1], "odometry") == 0)
+    return flashicp::run_odometry_cli(argc, argv);
   if (argc >= 3 && std::strcmp(argv[1], "corr") == 0) return run_corr(argc, argv);
   if (argc < 3 || std::strcmp(argv[1], "bench") != 0) {
     std::printf("usage: flashicp bench cloud.bin [leaf=0.05] [iters=20]\n");

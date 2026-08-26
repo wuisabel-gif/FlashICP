@@ -24,6 +24,17 @@ int main() {
   assert(correspondences.size() == source.size());
   assert(correspondences[0].idx == 0);
   assert(correspondences[1].idx == -1);
+  const auto hashed = flashicp::correspond_cpu_grid(
+      std::vector<Point>{{0.0f, 0.0f, 0.0f}, {0.2f, 0.0f, 0.0f}},
+      std::vector<Point>{{0.1f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}, 0.5f);
+  const auto brute = flashicp::correspond_cpu(
+      std::vector<Point>{{0.0f, 0.0f, 0.0f}, {0.2f, 0.0f, 0.0f}},
+      std::vector<Point>{{0.1f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}, 0.5f);
+  assert(hashed.size() == brute.size());
+  for (std::size_t i = 0; i < hashed.size(); ++i) {
+    assert(hashed[i].idx == brute[i].idx);
+    assert(std::abs(hashed[i].d2 - brute[i].d2) < 1.0e-7f);
+  }
 
   std::printf("test_primitives: PASS\n");
   return 0;

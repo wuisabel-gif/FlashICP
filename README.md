@@ -16,9 +16,10 @@ The current checkout contains GPU voxelization, a spatial-hash correspondence
 prototype, CPU reference code, and an offline ROS bag extractor. The roadmap is
 to turn those pieces into a generic point-to-point and point-to-plane ICP
 frontend for AUV depth clouds and KITTI Velodyne LiDAR, then use it for LiDAR
-odometry on Jetson-class NVIDIA hardware. The CPU point-to-point registration
-reference is now in place; point-to-plane and the KITTI odometry workflow remain
-future milestones.
+odometry on Jetson-class NVIDIA hardware. CPU point-to-point and point-to-plane
+registration references, KITTI loading, sequential odometry, and trajectory
+evaluation are now available. CUDA point-to-plane accumulation remains optional
+work; CUDA point-to-point remains available as before.
 
 The existing performance evidence is limited to the voxel stage on one real AUV
 cloud. It is not yet an end-to-end ICP or LiDAR-odometry benchmark.
@@ -72,7 +73,7 @@ Barracuda/ZED rosbag ─► custom x,y,z binary ─► CPU/CUDA voxelization
                                              └► CPU/CUDA correspondence prototype
 ```
 
-Target path, tracked in the roadmap:
+Current CPU target path:
 
 ```
 KITTI LiDAR / AUV cloud ─► preprocess ─► correspondence ─► point-to-plane ICP
@@ -83,10 +84,14 @@ KITTI LiDAR / AUV cloud ─► preprocess ─► correspondence ─► point-to-
 ## Status
 
 **Implemented:** a generic CPU-safe registration API with SE(3) transforms, CPU
-point-to-point ICP, CPU/CUDA voxel-grid downsampling, CPU brute-force
-correspondence, a CUDA fixed-radius spatial-hash correspondence prototype, the
-custom cloud format, Barracuda/ZED SQLite bag extraction, a small benchmark CLI,
-and CTest coverage. The atomic-hash voxel path was measured at **3.0× versus
+point-to-point and point-to-plane ICP, CPU target-normal estimation and a
+dependency-free stable 6x6 solve, CPU/CUDA voxel-grid downsampling, an exact
+CPU spatial-hash correspondence path with the brute-force oracle retained, a
+CUDA fixed-radius spatial-hash correspondence prototype, the custom cloud
+format, Barracuda/ZED SQLite bag extraction, a KITTI
+Velodyne loader, sequential LiDAR odometry, KITTI pose/calibration parsing,
+trajectory metrics, machine-readable output, a small benchmark CLI, and CTest
+coverage. The atomic-hash voxel path was measured at **3.0× versus
 CPU** on one real Jetson AGX Orin ZED cloud (0.998 ms versus 2.991 ms); the
 original sort path was 0.7×. Full history is in `docs/jetson_runlog.md`.
 
@@ -96,9 +101,9 @@ point-to-point registration is wired behind the public API, but this checkout
 has no `nvcc` to compile or run it. The CPU correctness suite passes; GPU
 agreement remains a conditional hardware test.
 
-**Planned:** point-to-plane ICP, KITTI loading, sequential odometry, trajectory
-metrics, stage benchmarks, profiling, and optional Rerun/ROS 2/GTSAM
-integrations. These are not presented as current capabilities.
+**Planned:** CUDA point-to-plane normal-equation accumulation, stage benchmarks,
+profiling, and optional Rerun/ROS 2/GTSAM integrations. These remain optional
+and are not presented as current capabilities.
 
 ## Build & run
 
@@ -157,21 +162,60 @@ auto result = flashicp::align(source, target,
 // Check result.status before consuming the transform.
 ```
 
-The current registration method is point-to-point. Point-to-plane, KITTI
-odometry, and trajectory evaluation are tracked as later roadmap milestones.
+Set `options.method = flashicp::ICPMethod::PointToPlane` to use CPU target
+normal estimation, point-to-plane residuals, and the dependency-free 6x6
+incremental solve. Target normals are oriented toward the target sensor origin.
+The result reports `timing.normal_estimation_ms`, `status`, and `message`
+explicitly. With a CUDA build, a point-to-plane request currently uses the CPU
+correctness reference and reports `backend_used == ExecutionBackend::CPU`; this
+is not a CUDA benchmark claim.
+
+### KITTI LiDAR odometry
+
+Download and unpack the official dataset as described in
+[`tools/kitti_download.md`](tools/kitti_download.md), then run:
+
+```bash
+./build/flashicp odometry \
+  --dataset kitti --sequence /data/kitti/sequences/00 \
+  --method point-to-plane --backend cpu \
+  --radius 1.0 --normal-radius 1.0 --output trajectory.json
+```
+
+The CLI loads `velodyne/*.bin` numerically by frame number and ignores
+reflectance. Each ICP result maps the current source Velodyne frame into the
+reference target frame. The accumulated pose maps the current frame into the
+fixed initial-scan world frame. `--on-failure stop` (default) stops after a
+failed frame; `hold` retains the last valid pose and continues, while `skip`
+keeps the last successful scan as the next reference and records the gap.
+JSON contains per-frame records and aggregates. CSV contains per-frame records
+and writes a `<output>.summary.json` sidecar for aggregates.
+
+KITTI `poses/<sequence>.txt` labels are camera-0 poses, not Velodyne poses.
+Supply `--poses path --calib sequences/00/calib.txt` (or use auto-discovery)
+so the loader explicitly applies `T_world_velo = T_world_camera0 *
+T_camera0_velo`. To evaluate labels already expressed in the Velodyne frame,
+use `--poses-frame lidar`. Missing or incompatible labels produce no fabricated
+metrics.
 
 ## Layout
 
 ```
 tools/dump_cloud.py   rosbag PointCloud2 -> flat x,y,z binary
+tools/kitti_download.md KITTI download/layout and frame conventions
 tools/test_corr.cpp   standalone self-check for the CPU correspondence baseline
 include/flashicp/      CPU-safe public PointCloud / SE(3) / registration API
 src/flashicp.hpp      Point, cloud IO, CPU voxel-downsample + correspondence baselines
-src/registration.cpp  CPU point-to-point ICP and public API dispatch
+src/registration.cpp  CPU point-to-point/point-to-plane ICP and public dispatch
+src/normals.cpp       CPU target normal estimation
+src/kitti.cpp         KITTI Velodyne/pose/calibration loading
+src/odometry.cpp      sequential scan registration and pose accumulation
+src/evaluation.cpp    translation/rotation, ATE/RPE, and aggregates
 src/registration_cuda.cu  CUDA transform/reduction path with host rigid solve
 src/voxel_gpu.cu      CUDA voxel downsample (thrust sort baseline + atomic hash)
 src/corr_gpu.cu       CUDA correspondence (fixed-radius spatial hash grid, 27-cell probe)
-src/main.cpp          bench/corr CLI (timing + CPU/GPU correctness check)
+src/main.cpp          bench/corr/odometry CLI entry point
+src/odometry_cli.cpp  KITTI odometry argument parsing and output
 CMakeLists.txt        CPU-always, CUDA-if-available build
 docs/roadmap.md       audited status, dependency roadmap, and issue index
 docs/issues/          copy/paste-ready implementation issue briefs

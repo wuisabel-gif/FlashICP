@@ -151,9 +151,18 @@ RegistrationResult align_cuda(const PointCloud& source, const PointCloud& target
                               const Transform& initial_guess,
                               const ICPOptions& options) {
   const Clock::time_point started = Clock::now();
+  if (options.method == ICPMethod::PointToPlane) {
+    // The CPU implementation remains the correctness oracle. Keep the public
+    // CUDA API usable for this method while the device normal-equation kernel
+    // is developed separately; backend_used makes this fallback explicit.
+    RegistrationResult result = align_cpu(source, target, initial_guess, options);
+    result.backend_used = ExecutionBackend::CPU;
+    result.message = "point-to-plane CUDA accumulation is not enabled; CPU reference used";
+    return result;
+  }
   if (options.method != ICPMethod::PointToPoint) {
     return failure(RegistrationStatus::UnsupportedMethod, initial_guess,
-                   "point-to-plane is not implemented yet", started);
+                   "unsupported ICP method for CUDA path", started);
   }
   std::string validation_message;
   if (!validate_options(options, validation_message)) {
@@ -207,6 +216,7 @@ RegistrationResult align_cuda(const PointCloud& source, const PointCloud& target
   }
   RegistrationResult result;
   result.transform = initial_guess;
+  result.backend_used = ExecutionBackend::CUDA;
   result.timing.preprocessing_ms =
       std::chrono::duration<double, std::milli>(Clock::now() - preprocess_started).count();
   if (source_work.size() < options.min_correspondences ||

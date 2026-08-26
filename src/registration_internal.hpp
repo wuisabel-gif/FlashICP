@@ -1,6 +1,7 @@
 #pragma once
 
 #include "flashicp.hpp"
+#include "flashicp/normals.hpp"
 
 namespace flashicp {
 
@@ -16,6 +17,12 @@ SolveStatus solve_rigid(const std::vector<PointXYZ>& source,
                         const std::vector<PointXYZ>& target,
                         const std::vector<Corr>& correspondences,
                         Transform& transform, float& rms);
+
+SolveStatus solve_point_to_plane(const std::vector<PointXYZ>& source,
+                                 const std::vector<PointXYZ>& target,
+                                 const std::vector<Corr>& correspondences,
+                                 const NormalCloud& normals, Transform& delta,
+                                 float& rms, std::size_t& valid_correspondences);
 
 float transform_step(const Transform& transform);
 
