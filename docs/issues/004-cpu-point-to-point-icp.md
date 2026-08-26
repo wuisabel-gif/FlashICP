@@ -1,8 +1,8 @@
 # 004 — Implement CPU point-to-point ICP
 
-**Status:** Implemented  
-**Priority:** P0  
-**Labels:** `area:core`, `area:odometry`, `priority:p0`  
+**Status:** Implemented
+**Priority:** P0
+**Labels:** `area:core`, `area:odometry`, `priority:p0`
 **Depends on:** 002, 003
 
 ## Goal

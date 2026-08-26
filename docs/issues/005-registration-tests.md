@@ -1,8 +1,8 @@
 # 005 — Add registration correctness and failure-mode tests
 
-**Status:** Partial  
-**Priority:** P0  
-**Labels:** `area:core`, `priority:p0`  
+**Status:** Partial
+**Priority:** P0
+**Labels:** `area:core`, `priority:p0`
 **Depends on:** 004
 
 ## Goal

@@ -1,8 +1,8 @@
 # 017 — Add an optional GTSAM frontend example
 
-**Status:** Planned  
-**Priority:** P2  
-**Labels:** `area:integration`, `priority:p2`  
+**Status:** Planned
+**Priority:** P2
+**Labels:** `area:integration`, `priority:p2`
 **Depends on:** 009, 010
 
 ## Goal

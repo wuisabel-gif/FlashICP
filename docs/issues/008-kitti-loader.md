@@ -1,8 +1,8 @@
 # 008 — Add the KITTI Odometry loader
 
-**Status:** Planned  
-**Priority:** P0  
-**Labels:** `area:data`, `area:odometry`, `priority:p0`  
+**Status:** Planned
+**Priority:** P0
+**Labels:** `area:data`, `area:odometry`, `priority:p0`
 **Depends on:** 002, 003
 
 ## Goal

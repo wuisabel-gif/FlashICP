@@ -1,8 +1,8 @@
 # 006 — Implement CUDA point-to-point ICP
 
-**Status:** Partial, CUDA unverified  
-**Priority:** P0  
-**Labels:** `area:cuda`, `area:core`, `priority:p0`  
+**Status:** Partial, CUDA unverified
+**Priority:** P0
+**Labels:** `area:cuda`, `area:core`, `priority:p0`
 **Depends on:** 004, 005
 
 ## Goal

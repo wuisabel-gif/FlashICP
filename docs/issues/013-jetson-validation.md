@@ -1,8 +1,8 @@
 # 013 — Validate and document Jetson deployment
 
-**Status:** Planned  
-**Priority:** P1  
-**Labels:** `area:cuda`, `area:benchmark`, `priority:p1`  
+**Status:** Planned
+**Priority:** P1
+**Labels:** `area:cuda`, `area:benchmark`, `priority:p1`
 **Depends on:** 011
 
 ## Goal

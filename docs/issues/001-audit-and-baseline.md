@@ -1,7 +1,7 @@
 # 001 — Audit the existing implementation and establish a baseline
 
-**Status:** Complete  
-**Priority:** P0  
+**Status:** Complete
+**Priority:** P0
 **Labels:** `area:core`, `priority:p0`
 
 ## Goal

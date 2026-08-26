@@ -1,8 +1,8 @@
 # 002 — Introduce the generic core API
 
-**Status:** Implemented  
-**Priority:** P0  
-**Labels:** `area:core`, `priority:p0`  
+**Status:** Implemented
+**Priority:** P0
+**Labels:** `area:core`, `priority:p0`
 **Depends on:** 001
 
 ## Goal

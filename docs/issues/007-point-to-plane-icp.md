@@ -1,8 +1,8 @@
 # 007 — Add point-to-plane ICP
 
-**Status:** Planned  
-**Priority:** P0  
-**Labels:** `area:core`, `area:cuda`, `area:odometry`, `priority:p0`  
+**Status:** Planned
+**Priority:** P0
+**Labels:** `area:core`, `area:cuda`, `area:odometry`, `priority:p0`
 **Depends on:** 005, 006
 
 ## Goal

@@ -1,8 +1,8 @@
 # 009 — Build sequential LiDAR odometry
 
-**Status:** Planned  
-**Priority:** P0  
-**Labels:** `area:odometry`, `area:core`, `priority:p0`  
+**Status:** Planned
+**Priority:** P0
+**Labels:** `area:odometry`, `area:core`, `priority:p0`
 **Depends on:** 007, 008
 
 ## Goal

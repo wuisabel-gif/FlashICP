@@ -1,8 +1,8 @@
 # 012 — Add reproducible robustness experiments
 
-**Status:** Planned  
-**Priority:** P1  
-**Labels:** `area:core`, `area:benchmark`, `priority:p1`  
+**Status:** Planned
+**Priority:** P1
+**Labels:** `area:core`, `area:benchmark`, `priority:p1`
 **Depends on:** 005, 007, 009
 
 ## Goal

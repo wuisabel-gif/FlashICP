@@ -1,8 +1,8 @@
 # 016 — Add an optional ROS 2 wrapper
 
-**Status:** Planned  
-**Priority:** P2  
-**Labels:** `area:integration`, `area:odometry`, `priority:p2`  
+**Status:** Planned
+**Priority:** P2
+**Labels:** `area:integration`, `area:odometry`, `priority:p2`
 **Depends on:** 009
 
 ## Goal

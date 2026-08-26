@@ -1,8 +1,8 @@
 # 011 — Build the CPU/CUDA benchmark suite
 
-**Status:** Planned  
-**Priority:** P1  
-**Labels:** `area:benchmark`, `area:cuda`, `priority:p1`  
+**Status:** Planned
+**Priority:** P1
+**Labels:** `area:benchmark`, `area:cuda`, `priority:p1`
 **Depends on:** 006, 007, 009
 
 ## Goal

@@ -1,8 +1,8 @@
 # 003 — Harden existing primitives and CI
 
-**Status:** Partial  
-**Priority:** P0  
-**Labels:** `area:core`, `area:cuda`, `priority:p0`  
+**Status:** Partial
+**Priority:** P0
+**Labels:** `area:core`, `area:cuda`, `priority:p0`
 **Depends on:** 002
 
 ## Goal
