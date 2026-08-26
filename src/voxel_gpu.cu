@@ -7,6 +7,9 @@
 #include <thrust/transform.h>
 
 #include <cstdio>
+#include <climits>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include "cuda_check.hpp"
@@ -15,12 +18,21 @@
 namespace {
 
 // Matches voxel_key() in flashicp.hpp.
+__host__ __device__ inline long long voxel_cell(float value, float leaf) {
+  const float q = floorf(value / leaf);
+  if (!isfinite(q)) return q > 0.0f ? static_cast<long long>(INT_MAX)
+                                   : static_cast<long long>(INT_MIN);
+  if (q >= static_cast<float>(INT_MAX)) return static_cast<long long>(INT_MAX);
+  if (q <= static_cast<float>(INT_MIN)) return static_cast<long long>(INT_MIN);
+  return static_cast<long long>(q);
+}
+
 __host__ __device__ inline unsigned long long key_of(const flashicp::Point& p,
                                                      float leaf) {
   const long long B = 0x1FFFFF;
-  long long ix = ((long long)floorf(p.x / leaf) + (1 << 20)) & B;
-  long long iy = ((long long)floorf(p.y / leaf) + (1 << 20)) & B;
-  long long iz = ((long long)floorf(p.z / leaf) + (1 << 20)) & B;
+  long long ix = (voxel_cell(p.x, leaf) + (1 << 20)) & B;
+  long long iy = (voxel_cell(p.y, leaf) + (1 << 20)) & B;
+  long long iz = (voxel_cell(p.z, leaf) + (1 << 20)) & B;
   return (unsigned long long)((ix << 42) | (iy << 21) | iz);
 }
 
@@ -137,6 +149,10 @@ namespace flashicp {
 
 std::vector<Point> voxel_downsample_gpu(const std::vector<Point>& in, float leaf) {
   const size_t n = in.size();
+  if (n == 0 || !std::isfinite(leaf) || leaf <= 0.0f) return {};
+  for (const Point& p : in) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) return {};
+  }
   thrust::device_vector<Point> d_pts(in.begin(), in.end());
   thrust::device_vector<long long> d_keys(n);
   thrust::transform(d_pts.begin(), d_pts.end(), d_keys.begin(), KeyFromPoint{leaf});
@@ -160,6 +176,12 @@ std::vector<Point> voxel_downsample_gpu(const std::vector<Point>& in, float leaf
 std::vector<Point> voxel_downsample_gpu_hash(const std::vector<Point>& in,
                                              float leaf) {
   const size_t n = in.size();
+  if (n == 0 || !std::isfinite(leaf) || leaf <= 0.0f ||
+      n > static_cast<size_t>(std::numeric_limits<int>::max())) return {};
+  for (const Point& p : in) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) return {};
+  }
+  if (n > std::numeric_limits<size_t>::max() / 2) return {};
   const size_t cap = next_pow2(n) * 2;
   const unsigned long long mask = cap - 1;
   ensure(n, cap);

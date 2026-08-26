@@ -7,16 +7,15 @@ on:
 
 jobs:
   cpu:
-    name: CPU build + correspondence self-check
+    name: CPU build + CTest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build (CPU-only) and run the self-check
         run: |
-          cmake -B build -DUSE_CUDA=OFF
+          cmake -B build -DUSE_CUDA=OFF -DBUILD_TESTING=ON
           cmake --build build
-          c++ -std=c++17 -Wall -Wextra -Isrc tools/test_corr.cpp -o test_corr
-          ./test_corr
+          ctest --test-dir build --output-on-failure
 
   cuda:
     name: CUDA compile (sm_87, no GPU on the runner)
@@ -31,5 +30,6 @@ jobs:
           sub-packages: '["nvcc"]'
       - name: Configure + build with CUDA enabled
         run: |
-          cmake -B build -DUSE_CUDA=ON
+          cmake -B build -DUSE_CUDA=ON -DBUILD_TESTING=ON \
+            -DFLASHICP_CUDA_ARCHITECTURES=87
           cmake --build build

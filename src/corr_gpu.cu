@@ -16,6 +16,9 @@
 #include <thrust/sort.h>
 
 #include <cfloat>
+#include <climits>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include "cuda_check.hpp"
@@ -26,12 +29,23 @@ namespace {
 // Teschner et al. spatial hash — recognisable, cheap, decorrelates cell coords.
 __host__ __device__ inline unsigned int hash_cell(int x, int y, int z,
                                                   unsigned int mask) {
-  unsigned int h = (unsigned int)(x * 73856093) ^ (unsigned int)(y * 19349663) ^
-                   (unsigned int)(z * 83492791);
+  const unsigned int h = static_cast<unsigned int>(x) * 73856093u ^
+                         static_cast<unsigned int>(y) * 19349663u ^
+                         static_cast<unsigned int>(z) * 83492791u;
   return h & mask;
 }
 __host__ __device__ inline int cell_of(float v, float c) {
-  return (int)floorf(v / c);
+  const float q = floorf(v / c);
+  if (!isfinite(q)) return q > 0.0f ? INT_MAX : INT_MIN;
+  if (q >= static_cast<float>(INT_MAX)) return INT_MAX;
+  if (q <= static_cast<float>(INT_MIN)) return INT_MIN;
+  return static_cast<int>(q);
+}
+
+__host__ __device__ inline int offset_cell(int cell, int offset) {
+  if (offset < 0 && cell == INT_MIN) return INT_MIN;
+  if (offset > 0 && cell == INT_MAX) return INT_MAX;
+  return cell + offset;
 }
 
 // Hash each target point to a bucket.
@@ -69,7 +83,8 @@ __global__ void query_kernel(const flashicp::Point* src, int ns,
   for (int dz = -1; dz <= 1; ++dz)
     for (int dy = -1; dy <= 1; ++dy)
       for (int dx = -1; dx <= 1; ++dx) {
-        unsigned int b = hash_cell(cx + dx, cy + dy, cz + dz, mask);
+        unsigned int b = hash_cell(offset_cell(cx, dx), offset_cell(cy, dy),
+                                   offset_cell(cz, dz), mask);
         int a = start[b];
         if (a < 0) continue;  // empty bucket
         int e = end[b];
@@ -99,9 +114,31 @@ namespace flashicp {
 // persistent Scratch here once M2 lands in the real per-keyframe loop.
 std::vector<Corr> correspond_gpu(const std::vector<Point>& src,
                                  const std::vector<Point>& tgt, float radius) {
-  const int ns = (int)src.size(), nt = (int)tgt.size();
-  std::vector<Corr> out(ns);
+  if (src.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+      tgt.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return std::vector<Corr>(src.size(), Corr{-1, -1.0f});
+  }
+  const int ns = static_cast<int>(src.size());
+  const int nt = static_cast<int>(tgt.size());
+  std::vector<Corr> out(ns, Corr{-1, -1.0f});
   if (ns == 0 || nt == 0) return out;
+
+  // The public ICP API requires a positive finite radius. Preserve the legacy
+  // CPU helper's unbounded semantics for direct callers instead of dividing by
+  // zero or passing NaN into the cell hash.
+  if (!std::isfinite(radius) || radius <= 0.0f) {
+    return correspond_cpu(src, tgt, radius);
+  }
+  for (const Point& p : src) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+      return correspond_cpu(src, tgt, radius);
+    }
+  }
+  for (const Point& p : tgt) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+      return correspond_cpu(src, tgt, radius);
+    }
+  }
 
   const float cell = radius;  // cell edge == radius => 27-cell search is exact
   const size_t cap = next_pow2((size_t)nt) * 2;
