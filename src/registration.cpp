@@ -495,6 +495,27 @@ RegistrationResult align_cpu(const PointCloud& source, const PointCloud& target,
 RegistrationResult align(const PointCloud& source, const PointCloud& target,
                          const Transform& initial_guess,
                          const ICPOptions& options) {
+  const Clock::time_point started = Clock::now();
+#ifdef FLASHICP_CUDA
+  if (options.backend != ExecutionBackend::CPU) {
+    RegistrationResult result =
+        internal::align_cuda(source, target, initial_guess, options);
+    if (options.backend == ExecutionBackend::Auto &&
+        result.status == RegistrationStatus::CudaUnavailable) {
+      return align_cpu(source, target, initial_guess, options);
+    }
+    return result;
+  }
+#else
+  if (options.backend == ExecutionBackend::CUDA) {
+    RegistrationResult result;
+    result.transform = initial_guess;
+    result.status = RegistrationStatus::CudaUnavailable;
+    result.message = "FlashICP was built without CUDA";
+    finish_timing(result, started);
+    return result;
+  }
+#endif
   return align_cpu(source, target, initial_guess, options);
 }
 

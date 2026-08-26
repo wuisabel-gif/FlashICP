@@ -8,15 +8,23 @@
   </a>
 </p>
 
-GPU-accelerated ICP (Iterative Closest Point) for underwater point clouds, written in CUDA.
+CUDA-accelerated point-cloud registration primitives for autonomous systems,
+written in C++17 and CUDA.
 
-FlashICP takes the registered point cloud from an AUV's stereo camera and aligns
-consecutive scans on the GPU — the same point-cloud frontend a factor-graph SLAM
-backend (e.g. GTSAM) relies on, but fast enough to keep up on a Jetson.
+FlashICP began as an underwater point-cloud project for Barracuda / ZED data.
+The current checkout contains GPU voxelization, a spatial-hash correspondence
+prototype, CPU reference code, and an offline ROS bag extractor. The roadmap is
+to turn those pieces into a generic point-to-point and point-to-plane ICP
+frontend for AUV depth clouds and KITTI Velodyne LiDAR, then use it for LiDAR
+odometry on Jetson-class NVIDIA hardware. The CPU point-to-point registration
+reference is now in place; point-to-plane and the KITTI odometry workflow remain
+future milestones.
 
-It is built and benchmarked against **real AUV rosbags** (Barracuda / ZED Mini),
-so every kernel has a CPU baseline and a measured speedup on actual data, not a
-synthetic benchmark.
+The existing performance evidence is limited to the voxel stage on one real AUV
+cloud. It is not yet an end-to-end ICP or LiDAR-odometry benchmark.
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the audited status, dependencies,
+and copy/paste-ready issue briefs in [`docs/issues/`](docs/issues/).
 
 <p align="center">
   <img src="Instrument.gif" alt="ICP aligning two scans: correspondence vectors shrink and the RMS error converges" width="720">
@@ -43,8 +51,9 @@ that. FlashICP's payoff is concrete:
 - **Same chip, more capability.** A faster kernel at the same power lets one Jetson run
   perception *and* mapping *and* avoidance, instead of demanding a bigger, hotter box.
 
-The measured **3.0× speedup at the same power** is a small, honest step toward exactly
-that: doing more of the robot's thinking onboard, for less.
+The measured **3.0× speedup for the atomic-hash voxel stage** is a small, honest
+step toward doing more of the robot's thinking onboard, for less. End-to-end
+registration measurements are still planned.
 
 ## Why a GPU
 
@@ -56,19 +65,40 @@ benchmarkable result.
 
 ## Pipeline
 
+Implemented prototype path:
+
 ```
-rosbag point cloud  ─►  GPU preprocess  ─►  GPU correspondence  ─►  build + solve  ─►  pose
- (ZED registered)       voxel / crop /       nearest-neighbor       6x6 normal eqs     (T)
-                        outlier / normals     via voxel grid         (reduction)
+Barracuda/ZED rosbag ─► custom x,y,z binary ─► CPU/CUDA voxelization
+                                             └► CPU/CUDA correspondence prototype
+```
+
+Target path, tracked in the roadmap:
+
+```
+KITTI LiDAR / AUV cloud ─► preprocess ─► correspondence ─► point-to-plane ICP
+                                                       └► SE(3) ─► LiDAR odometry
+                                                                    └► evaluation / optional Rerun
 ```
 
 ## Status
 
-Early but real: GPU voxel-grid downsample with a CPU baseline + timing harness,
-benchmarked on a real recorded ZED point cloud on a Jetson AGX Orin. The first sort-based
-port measured 0.7× (slower than CPU); the single-pass atomic-hash rewrite runs
-**3.0× faster than the CPU** (0.998 ms vs 2.991 ms, bit-exact output). Full
-story in `docs/jetson_runlog.md`.
+**Implemented:** a generic CPU-safe registration API with SE(3) transforms, CPU
+point-to-point ICP, CPU/CUDA voxel-grid downsampling, CPU brute-force
+correspondence, a CUDA fixed-radius spatial-hash correspondence prototype, the
+custom cloud format, Barracuda/ZED SQLite bag extraction, a small benchmark CLI,
+and CTest coverage. The atomic-hash voxel path was measured at **3.0× versus
+CPU** on one real Jetson AGX Orin ZED cloud (0.998 ms versus 2.991 ms); the
+original sort path was 0.7×. Full history is in `docs/jetson_runlog.md`.
+
+**Experimental or unverified:** CUDA correspondence is checked in but has not
+yet been executed and benchmarked on the target in this checkout. CUDA
+point-to-point registration is wired behind the public API, but this checkout
+has no `nvcc` to compile or run it. The CPU correctness suite passes; GPU
+agreement remains a conditional hardware test.
+
+**Planned:** point-to-plane ICP, KITTI loading, sequential odometry, trajectory
+metrics, stage benchmarks, profiling, and optional Rerun/ROS 2/GTSAM
+integrations. These are not presented as current capabilities.
 
 ## Build & run
 
@@ -82,6 +112,7 @@ python3 tools/dump_cloud.py /path/to/bag.db3 --out-dir data --max 2
 ```bash
 cmake -B build -DUSE_CUDA=ON      # CUDA auto-disables if no nvcc (e.g. on a Mac)
 cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 **3. Benchmark CPU vs GPU:**
@@ -95,28 +126,53 @@ cmake --build build
 #   check: PASS (matches CPU)
 ```
 
-- On a **Jetson Orin / desktop GPU**: full CPU-vs-GPU comparison.
+- On a **Jetson Orin**: full CPU-vs-GPU comparison when built with CUDA.
+- Other GPUs require an appropriate CUDA architecture configuration; portable
+  architecture selection is tracked in the roadmap.
 - On a **Mac** (no CUDA): CPU baseline only — still useful to profile the C++ path.
 
-**4. Correspondence (M2):** nearest-neighbor between two clouds via a GPU spatial hash grid.
+**4. Correspondence (prototype):** nearest-neighbor between two clouds via a GPU spatial hash grid.
 ```bash
 ./build/flashicp corr data/cloud0.bin data/cloud1.bin 0.20 20
 # radius 0.20 m; each source point probes its 27 neighbor cells on the GPU,
-# checked against a brute-force CPU baseline.
+# checked against a brute-force CPU baseline when CUDA is available.
 ```
 The CPU baseline has a standalone self-check (no CUDA needed):
 ```bash
 c++ -std=c++17 -Isrc tools/test_corr.cpp -o /tmp/test_corr && /tmp/test_corr  # -> PASS
 ```
 
+### CPU point-to-point API
+
+The generic CPU-safe registration boundary is available independently of CUDA:
+
+```cpp
+#include <flashicp/registration.hpp>
+
+flashicp::ICPOptions options;
+options.backend = flashicp::ExecutionBackend::CPU;
+auto result = flashicp::align(source, target,
+                              flashicp::Transform::identity(), options);
+// result.transform maps source-frame points into the target frame.
+// Check result.status before consuming the transform.
+```
+
+The current registration method is point-to-point. Point-to-plane, KITTI
+odometry, and trajectory evaluation are tracked as later roadmap milestones.
+
 ## Layout
 
 ```
 tools/dump_cloud.py   rosbag PointCloud2 -> flat x,y,z binary
 tools/test_corr.cpp   standalone self-check for the CPU correspondence baseline
+include/flashicp/      CPU-safe public PointCloud / SE(3) / registration API
 src/flashicp.hpp      Point, cloud IO, CPU voxel-downsample + correspondence baselines
+src/registration.cpp  CPU point-to-point ICP and public API dispatch
+src/registration_cuda.cu  CUDA transform/reduction path with host rigid solve
 src/voxel_gpu.cu      CUDA voxel downsample (thrust sort baseline + atomic hash)
 src/corr_gpu.cu       CUDA correspondence (fixed-radius spatial hash grid, 27-cell probe)
 src/main.cpp          bench/corr CLI (timing + CPU/GPU correctness check)
 CMakeLists.txt        CPU-always, CUDA-if-available build
+docs/roadmap.md       audited status, dependency roadmap, and issue index
+docs/issues/          copy/paste-ready implementation issue briefs
 ```

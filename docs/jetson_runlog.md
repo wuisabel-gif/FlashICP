@@ -116,8 +116,9 @@ speedup: 0.7x
 | speedup | **0.7×** (GPU slower) |
 | correctness | **PASS** — centroid L1 diff 8.1e-10 |
 
-**Correctness:** GPU output matches the CPU baseline bit-for-bit (same voxel count,
-centroid difference at float-noise level). The pipeline is sound.
+**Correctness:** The then-current check found the same voxel count and a centroid
+difference at float-noise level. It did not establish bit-for-bit equality for
+every keyed voxel centroid, and it does not validate the later ICP pipeline.
 
 **Performance:** the GPU is *slower* than the CPU here — the expected outcome for a
 first naive port at this problem size, and the most useful lesson of M1:
@@ -165,7 +166,9 @@ GPU voxel (hash): 0.998 ms  -> 1358 voxels  (3.0x vs CPU)   PASS
 
 **Why it won:** no O(n log n) sort (a single O(n) pass), persistent device buffers
 (no per-call `cudaMalloc`), and atomic accumulation that handles ~83 points/voxel of
-contention far more cheaply than sorting. Output still matches the CPU bit-for-bit.
+contention far more cheaply than sorting. The recorded check found matching voxel
+counts and float-level centroid agreement; it was not a bit-for-bit keyed-output
+comparison.
 
 The 3.0× is at a small problem size (113k points); it should widen on larger clouds
 and on the heavier M2 correspondence stage.

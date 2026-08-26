@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.18)
 project(FlashICP LANGUAGES CXX)
 
-option(USE_CUDA "Build the CUDA voxel and correspondence paths" ON)
+option(USE_CUDA "Build the CUDA voxel, correspondence, and registration paths" ON)
 option(BUILD_TESTING "Build FlashICP tests" ON)
 set(FLASHICP_CUDA_ARCHITECTURES "87" CACHE STRING
-    "CUDA architectures to build (for example 87, 86; empty uses compiler default)")
+    "CUDA architectures to build (for example 87, 86; empty uses the compiler default)")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,12 +14,16 @@ endif()
 
 set(SOURCES src/registration.cpp)
 set(FLASHICP_HAVE_CUDA OFF)
+
+# CUDA is optional so the CPU reference remains usable on development machines
+# without nvcc. The architecture is configurable; 87 remains the documented
+# Jetson AGX Orin default.
 include(CheckLanguage)
 check_language(CUDA)
 if(USE_CUDA AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
   set(FLASHICP_HAVE_CUDA ON)
-  list(APPEND SOURCES src/voxel_gpu.cu src/corr_gpu.cu)
+  list(APPEND SOURCES src/voxel_gpu.cu src/corr_gpu.cu src/registration_cuda.cu)
   message(STATUS "FlashICP: CUDA enabled")
 else()
   message(STATUS "FlashICP: CUDA disabled (CPU baseline only)")
