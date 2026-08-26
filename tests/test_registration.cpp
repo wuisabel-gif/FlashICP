@@ -152,7 +152,7 @@ void test_failures() {
   options.correspondence_radius = 0.5f;
   options.method = ICPMethod::PointToPlane;
   result = flashicp::align_cpu(source, source, Transform::identity(), options);
-  assert(result.status == RegistrationStatus::UnsupportedMethod);
+  assert(result.status != RegistrationStatus::UnsupportedMethod);
 }
 
 void test_public_dispatch() {

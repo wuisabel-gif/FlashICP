@@ -1,6 +1,6 @@
 # 010 — Add KITTI trajectory evaluation
 
-**Status:** Planned
+**Status:** Implemented
 **Priority:** P0
 **Labels:** `area:odometry`, `area:benchmark`, `priority:p0`
 **Depends on:** 008, 009

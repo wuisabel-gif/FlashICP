@@ -1,6 +1,6 @@
 # 007 — Add point-to-plane ICP
 
-**Status:** Planned
+**Status:** Implemented (CPU reference; CUDA accumulation remains optional)
 **Priority:** P0
 **Labels:** `area:core`, `area:cuda`, `area:odometry`, `priority:p0`
 **Depends on:** 005, 006
@@ -23,11 +23,17 @@ parallel reduction. Expose `--method point-to-point` and
 `--method point-to-plane` (or equivalent API configuration). Make normal
 orientation and source/target frame conventions explicit.
 
+The CPU implementation is complete and remains the correctness oracle. A CUDA
+point-to-plane request is routed through that oracle and reports
+`backend_used=cpu`; device-side normal-equation accumulation and CUDA agreement
+remain future optional work rather than an unverified performance claim.
+
 ## Acceptance criteria
 
 - CPU point-to-plane reduces residual on a deterministic planar/structured
   fixture and recovers a known small motion within documented tolerances.
-- CUDA and CPU normal-equation results and final poses agree within tolerances.
+- CUDA and CPU normal-equation agreement is a follow-up acceptance criterion for
+  the optional device implementation; no CUDA runtime result is claimed here.
 - The result reports normal-estimation and degenerate-system failures.
 - Options include maximum iterations, radius, voxel size, convergence tolerance,
   and minimum correspondences.

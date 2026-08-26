@@ -133,4 +133,52 @@ inline std::vector<Corr> correspond_cpu(const std::vector<Point>& src,
   return out;
 }
 
+// Exact CPU counterpart to the CUDA fixed-radius grid. Every target within the
+// radius lies in one of the 27 neighbouring cells, while the distance check and
+// lowest-index tie break preserve correspond_cpu's result. The brute-force
+// function above remains available as the simple correctness oracle.
+inline std::vector<Corr> correspond_cpu_grid(const std::vector<Point>& src,
+                                             const std::vector<Point>& tgt,
+                                             float radius) {
+  if (!std::isfinite(radius) || radius <= 0.0f) return correspond_cpu(src, tgt, radius);
+  const float radius2 = radius * radius;
+  std::unordered_map<int64_t, std::vector<std::size_t>> grid;
+  grid.reserve(tgt.size());
+  for (std::size_t j = 0; j < tgt.size(); ++j) {
+    if (!std::isfinite(tgt[j].x) || !std::isfinite(tgt[j].y) || !std::isfinite(tgt[j].z)) continue;
+    grid[voxel_key(floor_div(tgt[j].x, radius), floor_div(tgt[j].y, radius),
+                   floor_div(tgt[j].z, radius))].push_back(j);
+  }
+  std::vector<Corr> output(src.size(), {-1, -1.0f});
+  for (std::size_t i = 0; i < src.size(); ++i) {
+    if (!std::isfinite(src[i].x) || !std::isfinite(src[i].y) || !std::isfinite(src[i].z)) continue;
+    const int cx = floor_div(src[i].x, radius);
+    const int cy = floor_div(src[i].y, radius);
+    const int cz = floor_div(src[i].z, radius);
+    float best = radius2;
+    int best_index = -1;
+    for (int dx = -1; dx <= 1; ++dx) {
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dz = -1; dz <= 1; ++dz) {
+          const auto it = grid.find(voxel_key(cx + dx, cy + dy, cz + dz));
+          if (it == grid.end()) continue;
+          for (const std::size_t j : it->second) {
+            const float ex = src[i].x - tgt[j].x;
+            const float ey = src[i].y - tgt[j].y;
+            const float ez = src[i].z - tgt[j].z;
+            const float d2 = ex * ex + ey * ey + ez * ez;
+            if (d2 < best || (d2 == best &&
+                              (best_index < 0 || j < static_cast<std::size_t>(best_index)))) {
+              best = d2;
+              best_index = static_cast<int>(j);
+            }
+          }
+        }
+      }
+    }
+    output[i] = {best_index, best_index < 0 ? -1.0f : best};
+  }
+  return output;
+}
+
 }  // namespace flashicp

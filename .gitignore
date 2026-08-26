@@ -2,7 +2,7 @@
 /build/
 *.o
 *.obj
-flashicp
+/flashicp
 a.out
 
 # CUDA / compiler

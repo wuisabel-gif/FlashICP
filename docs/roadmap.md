@@ -19,7 +19,7 @@ cmake --build /tmp/flashicp-baseline-build --parallel
 ctest --test-dir /tmp/flashicp-baseline-build --output-on-failure
 ```
 
-Result: the CPU build passed and all three CTest targets passed.
+Result: the CPU Release build passed and all four CTest targets passed.
 
 ### Implemented today
 
@@ -27,7 +27,8 @@ Result: the CPU build passed and all three CTest targets passed.
 - CUDA voxel downsampling in `src/voxel_gpu.cu`:
   - Thrust sort/reduce implementation.
   - Open-addressing atomic-hash implementation with reused scratch buffers.
-- CPU brute-force, radius-limited nearest-neighbor correspondence.
+- CPU brute-force radius-limited nearest-neighbor correspondence oracle and an
+  exact CPU spatial-hash path for scalable registration.
 - CUDA fixed-radius spatial-hash correspondence in `src/corr_gpu.cu`.
 - A custom binary format: `int32 count`, followed by packed `float32 x,y,z`.
 - Offline extraction of the documented ROS 2 SQLite bag format through
@@ -37,6 +38,16 @@ Result: the CPU build passed and all three CTest targets passed.
   timing, and failure statuses.
 - CPU point-to-point ICP using the existing brute-force correspondence baseline
   and a dependency-free Horn rigid solve.
+- CPU target-normal estimation, point-to-plane Jacobians, scaled pivoted 6x6
+  normal-equation solving, and explicit normal-estimation/degeneracy statuses.
+- Official KITTI Velodyne `.bin` enumeration/decoding with numeric ordering,
+  finite-value and malformed-file checks, plus pose and calibration parsing.
+- Sequential KITTI LiDAR odometry with explicit current-to-reference and
+  current-to-initial-world conventions, stop/hold/skip failure policies, and
+  CSV/JSON records.
+- Translation/rotation trajectory errors, direct ATE, adjacent-frame RPE, and
+  registration timing/correspondence/iteration aggregates without fabricated
+  values.
 - CTest coverage for primitives, transform algebra, known transforms, noise,
   out-of-radius pairs, invalid input, and degenerate geometry.
 - A documented Jetson AGX Orin voxel benchmark, including the initial slower
@@ -60,17 +71,13 @@ Result: the CPU build passed and all three CTest targets passed.
 
 ### Not implemented
 
-- Point-to-plane iterative ICP.
-- Normal estimation, point-to-plane Jacobians, and 6x6 normal-equation solving.
-- KITTI Velodyne loader and calibration/pose handling.
-- Sequential LiDAR odometry and trajectory accumulation.
-- KITTI metrics, machine-readable evaluation, and registration-failure reports.
+- CUDA point-to-plane normal-equation accumulation and a device-side normal
+  estimator; CUDA requests currently identify the CPU reference fallback.
 - Stage-by-stage CPU/CUDA benchmark suite for registration.
 - ROS 2 node, Rerun visualization, or GTSAM example.
 
-The README and the website previously described the target pipeline more
-strongly than the source supports. The issue briefs below treat those stages as
-planned rather than completed.
+The README and issue briefs now distinguish the implemented CPU workflow from
+the optional CUDA point-to-plane work and the still-planned integrations.
 
 ## Dependency roadmap
 
@@ -100,8 +107,8 @@ flowchart TD
 |---|---|---|
 | M0 — Audit and scope | [001](issues/001-audit-and-baseline.md), [002](issues/002-generic-core-api.md), [003](issues/003-primitives-and-ci.md) | Existing AUV path is documented, the public boundary is generic, and CPU-only builds remain green. |
 | M1 — Correct registration | [004](issues/004-cpu-point-to-point-icp.md), [005](issues/005-registration-tests.md), [006](issues/006-cuda-point-to-point-icp.md) | A known rigid transform is recovered by CPU and CUDA within stated tolerances. |
-| M2 — Robotics ICP | [007](issues/007-point-to-plane-icp.md) | Point-to-plane is selectable and reports useful convergence/failure state. |
-| M3 — KITTI odometry | [008](issues/008-kitti-loader.md), [009](issues/009-lidar-odometry-cli.md), [010](issues/010-trajectory-evaluation.md) | Consecutive KITTI scans produce an estimated trajectory and reproducible metrics. |
+| M2 — Robotics ICP | [007](issues/007-point-to-plane-icp.md) | CPU point-to-plane is selectable and reports useful convergence/failure state; CUDA accumulation remains optional. |
+| M3 — KITTI odometry | [008](issues/008-kitti-loader.md), [009](issues/009-lidar-odometry-cli.md), [010](issues/010-trajectory-evaluation.md) | CPU consecutive KITTI scans produce an estimated trajectory and reproducible metrics; CUDA point-to-plane is not claimed. |
 | M4 — Evidence and deployment | [011](issues/011-benchmark-suite.md), [012](issues/012-robustness-experiments.md), [013](issues/013-jetson-validation.md), [014](issues/014-nsight-profiling.md) | CPU/CUDA timing, accuracy, failure boundaries, and Jetson measurements are recorded without invented values. |
 | M5 — Optional integrations | [015](issues/015-rerun-visualization.md), [016](issues/016-ros2-wrapper.md), [017](issues/017-gtsam-example.md) | Integrations are modular and do not make the standalone core depend on them. |
 
@@ -118,17 +125,17 @@ without a measurement or correctness reason.
 4. Add synthetic geometry/noise/failure tests before optimizing CUDA.
 5. Implement CUDA point-to-point ICP, initially allowing the small SE(3) solve on
    the host if that makes correctness easier to establish.
-6. Add normals and point-to-plane accumulation, first on CPU and then on CUDA.
-7. Add KITTI loading, then the sequential odometry command, then evaluation.
-8. Add timing and machine-readable output before making performance claims.
-9. Run robustness sweeps and Jetson measurements; profile only measured hot spots.
-10. Add Rerun, ROS 2, and GTSAM as optional layers after the standalone workflow is
-    stable.
+6. The CPU normals, point-to-plane accumulation, KITTI loading, odometry, and
+   evaluation stages are implemented in this checkout. Add device point-to-plane
+   accumulation only after a measured CUDA design is available.
+7. Run robustness sweeps and Jetson measurements; profile only measured hot spots.
+8. Add Rerun, ROS 2, and GTSAM as optional layers after the standalone workflow is
+   stable.
 
 ## First major definition of done
 
-This milestone is complete when the following command works on a supported CUDA
-machine with an available KITTI sequence:
+The CPU portion of this milestone is complete when the following command works
+with an available KITTI sequence (CUDA is optional and clearly identified):
 
 ```bash
 flashicp odometry \
@@ -144,7 +151,8 @@ It must produce:
 - ground-truth comparison when the matching KITTI poses are supplied/found;
 - aggregate translation/rotation, RPE/ATE where applicable, and failure counts;
 - CSV or JSON output suitable for reproducing a report; and
-- a CPU fallback plus a CUDA path that is clearly identified in the output.
+- a CPU path plus an optional CUDA point-to-point path; point-to-plane CUDA
+  fallback is clearly identified in the output rather than claimed as verified.
 
 This is LiDAR odometry. Loop closure, mapping, graph optimization, and a complete
 autonomous-driving stack remain out of scope.
