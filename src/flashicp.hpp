@@ -1,5 +1,7 @@
 // Point type, cloud IO, and the CPU voxel-downsample baseline.
 #pragma once
+#include "../include/flashicp/registration.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
@@ -9,9 +11,9 @@
 
 namespace flashicp {
 
-struct Point {
-  float x, y, z;
-};
+using Point = PointXYZ;
+static_assert(sizeof(Point) == sizeof(float) * 3,
+              "PointXYZ must remain a packed xyz triplet for the binary format");
 
 // Reads files written by tools/dump_cloud.py: int32 n, then n*(float x,y,z).
 inline std::vector<Point> load_cloud(const char* path) {
