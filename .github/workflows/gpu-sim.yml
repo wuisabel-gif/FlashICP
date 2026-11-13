@@ -59,6 +59,7 @@ jobs:
       # test_registration exits 77 (a ctest skip) when no CUDA device is
       # found, so fail the job if anything was skipped.
       - name: Test
+        shell: bash  # pipefail, so a failing ctest is not hidden by tee
         run: |
           vgpu run ctest --test-dir build --output-on-failure --no-tests=error 2>&1 | tee ctest.log
           if grep -q "Skipped" ctest.log; then
